@@ -1,18 +1,21 @@
-import React from 'react'
-import PropTypes from 'prop-types'
-import classnames from 'classnames'
+import React from "react"
+import PropTypes from "prop-types"
+import classnames from "classnames"
+import { Consumer } from "../context"
 
-const Link = ({ active, children, setFilter }) =>
-  (
-    <a
-      className={classnames({ selected: active })}
-      style={{ cursor: 'pointer' }}
-      onClick={() => setFilter()}
-    >
-      {children}
-    </a>
-  )
-
+const Link = ({ active, children, setFilter }) => (
+  <Consumer>
+    {app => (
+      <a
+        className={classnames({ selected: active })}
+        style={{ cursor: "pointer" }}
+        onClick={() => setFilter()}
+      >
+        {children}
+      </a>
+    )}
+  </Consumer>
+)
 
 Link.propTypes = {
   active: PropTypes.bool.isRequired,

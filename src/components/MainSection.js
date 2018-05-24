@@ -1,38 +1,39 @@
-import React from 'react'
-import PropTypes from 'prop-types'
-import Footer from './Footer'
-import VisibleTodoList from '../containers/VisibleTodoList'
+import React from "react"
+import Footer from "./Footer"
+import TodoList from '../components/TodoList'
+import { Consumer } from "../context"
 
-const MainSection = ({ todosCount, completedCount, actions }) =>
-  (
-    <section className="main">
-      {
-        !!todosCount && 
-        <span>
-          <input
-            className="toggle-all"
-            type="checkbox"
-            checked={completedCount === todosCount}
+const MainSection = () => (
+  <Consumer>
+    {app => (
+      <section className="main">
+        {!!app.data.filtered_todos.length && (
+          <span>
+            <input
+              className="toggle-all"
+              type="checkbox"
+              checked={app.data.completedCount === app.data.filtered_todos.length}
+            />
+            <label onClick={app.state.addByListener('CompletingAllTodos')} />
+          </span>
+        )}
+        <TodoList />
+        {!!app.data.todos.length && (
+          <Footer
+            completedCount={app.data.completedCount}
+            activeCount={app.data.activeCount}
+            onClearCompleted={app.state.addByListener('ClearingCompleted')}
           />
-          <label onClick={actions.completeAllTodos}/>
-        </span>
-      }
-      <VisibleTodoList />
-      {
-        !!todosCount &&
-        <Footer
-          completedCount={completedCount}
-          activeCount={todosCount - completedCount}
-          onClearCompleted={actions.clearCompleted}
-        />
-      }
-    </section>
-  )
+        )}
+      </section>
+    )}
+  </Consumer>
+)
 
-MainSection.propTypes = {
-  todosCount: PropTypes.number.isRequired,
-  completedCount: PropTypes.number.isRequired,
-  actions: PropTypes.object.isRequired
-}
+// MainSection.propTypes = {
+//   todosCount: PropTypes.number.isRequired,
+//   completedCount: PropTypes.number.isRequired,
+//   actions: PropTypes.object.isRequired
+// }
 
-export default MainSection;
+export default MainSection
