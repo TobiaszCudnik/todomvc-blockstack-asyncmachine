@@ -124,7 +124,7 @@ export default class Manager {
 
   // SIGN IN
   
-  SigningInInClicked_state() {
+  SignInClicked_state() {
     blockstack.redirectToSignIn()
   }
 

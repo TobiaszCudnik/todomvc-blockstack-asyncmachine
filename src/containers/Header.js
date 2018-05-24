@@ -7,6 +7,22 @@ export default () => (
     {app => (
       <header className="header">
         <h1>todos</h1>
+        <p
+          style={{
+            textAlign: "center",
+            padding: "0.5em"
+          }}
+        >
+          Logged in as{" "}
+          {app.data.user.name() ? app.data.user.name() : "anonymous"} ({app.data
+            .user.username
+            ? app.data.user.username
+            : app.data.user.identityAddress}{" "}
+          |{" "}
+          <a href="#" onClick={app.state.addByListener("SignOutClicked")}>
+            sign out
+          </a>)
+        </p>
         <TodoTextInput
           newTodo
           onSave={app.state.addByListener("AddingTodo")}

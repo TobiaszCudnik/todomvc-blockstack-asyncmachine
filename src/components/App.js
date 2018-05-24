@@ -12,11 +12,11 @@ const App = () => (
             <Header />
             <MainSection />
           </div>
-        ) : (
+        ) : app.state.not("SigningIn") ? (
           <button onClick={app.state.addByListener("SignInClicked")}>
             Sign In With Blockstack
           </button>
-        )}
+        ) : null}
       </Fragment>
     )}
   </Consumer>
