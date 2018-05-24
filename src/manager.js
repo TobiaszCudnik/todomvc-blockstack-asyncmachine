@@ -1,6 +1,6 @@
 import { machine } from "asyncmachine"
 import * as filter_types from "./constants/TodoFilters"
-import * as blockstack from 'blockstack'
+import * as blockstack from "blockstack"
 
 const state = {
   //  UI Actions
@@ -30,23 +30,41 @@ const state = {
   SignInClicked: {},
   SigningIn: {},
   SignedIn: { drop: ["SigningIn"] },
-  SignOutClicked: {}
+  SignOutClicked: {},
+
+  // SYNCING
+
+  InitialDBRead: {},
+
+  ReadingDB: { drop: ["WritingDB", "DBReadingDone"] },
+  DBReadingDone: { drop: ["ReadingDB"], add: ["InitialDBRead"] },
+
+  WritingDB: { drop: ["ReadingDB", "DBWritingDone"] },
+  DBWritingDone: { drop: ["WritingDB"] }
 }
 
 export default class Manager {
+  // config
+  blockstack_file = "todos.json"
+  log_level = 1
+
+  state = machine(state)
+  data = new Data()
+
   constructor() {
-    this.state = machine(state)
-    this.data = new Data()
     this.state
       .setTarget(this)
       .id("todos")
-      .logLevel(1)
+      .logLevel(this.log_level)
     if (blockstack.isUserSignedIn()) {
-      this.state.add('SignedIn')
+      this.state.add("SignedIn")
     } else if (blockstack.isSignInPending()) {
-      this.state.add('SigningIn')
+      this.state.add("SigningIn")
     }
+    this.state.add("ReadingDB")
   }
+
+  // ----- TRANSITIONS
 
   // ADD
 
@@ -54,9 +72,9 @@ export default class Manager {
     return Boolean(text)
   }
 
-  AddingTodo_state(text) {
-    this.data.todos.push({ id: Math.random(), text, completed: false })
-    this.state.add("TodoAdded")
+  async AddingTodo_state(text) {
+    this.data.todos.unshift({ id: Math.random(), text, completed: false })
+    this.state.add(["TodoAdded", "WritingDB"])
   }
 
   TodoAdded_state() {
@@ -71,9 +89,9 @@ export default class Manager {
     }
   }
 
-  EditingTodo_state(id, text) {
+  async EditingTodo_state(id, text) {
     this.data.get(id).text = text
-    this.state.add("TodoEdited")
+    this.state.add(["TodoEdited", "WritingDB"])
   }
 
   TodoEdited_state() {
@@ -88,11 +106,11 @@ export default class Manager {
     }
   }
 
-  DeletingTodo_state(id) {
+  async DeletingTodo_state(id) {
     const index = this.data.todos.findIndex(t => t.id === id)
     // I regret nothing...
     this.data.todos.splice(index, 1)
-    this.state.add("TodoDeleted")
+    this.state.add(["TodoDeleted", "WritingDB"])
   }
 
   TodoDeleted_state() {
@@ -108,9 +126,9 @@ export default class Manager {
     }
   }
 
-  CompletingTodo_state(id, state) {
+  async CompletingTodo_state(id, state) {
     this.data.get(id).completed = !!state
-    this.state.add("TodoCompleted")
+    this.state.add(["TodoCompleted", "WritingDB"])
   }
 
   TodoCompleted_state() {
@@ -122,8 +140,15 @@ export default class Manager {
     this.state.drop("SetVisibilityFilter")
   }
 
+  // CLEAR COMPLETED
+
+  ClearingCompleted_state() {
+    this.data.todos = this.data.todos.filter(t => !t.completed)
+    this.state.add(["CompletedCleared", "WritingDB"])
+  }
+
   // SIGN IN
-  
+
   SignInClicked_state() {
     blockstack.redirectToSignIn()
   }
@@ -142,6 +167,25 @@ export default class Manager {
 
   SignOutClicked_state() {
     blockstack.signUserOut(window.location.origin)
+  }
+
+  async WritingDB_state() {
+    const encrypt = true
+    await blockstack.putFile(
+      this.blockstack_file,
+      JSON.stringify(this.data.todos),
+      encrypt
+    )
+    this.state.add("DBWritingDone")
+  }
+
+  async ReadingDB_state() {
+    const decrypt = true
+    const todos_json = await blockstack.getFile(this.blockstack_file, decrypt)
+    const todos = JSON.parse(todos_json || "[]")
+
+    this.data.todos = todos
+    this.state.add("DBReadingDone")
   }
 }
 
