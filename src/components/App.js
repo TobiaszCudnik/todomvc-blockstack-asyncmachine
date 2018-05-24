@@ -7,7 +7,7 @@ const App = () => (
   <Consumer>
     {app => (
       <Fragment>
-        {app.state.is("SignedIn") ? (
+        {app.state.is("Ready") ? (
           <div>
             <Header />
             <MainSection />

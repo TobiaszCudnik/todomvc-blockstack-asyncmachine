@@ -14,8 +14,8 @@ export default () => (
           }}
         >
           Logged in as{" "}
-          {app.data.user.name() ? app.data.user.name() : "anonymous"} ({app.data
-            .user.username
+          {app.data.user.profile.name ? app.data.user.profile.name : "anonymous"} ({app
+            .data.user.username
             ? app.data.user.username
             : app.data.user.identityAddress}{" "}
           |{" "}
