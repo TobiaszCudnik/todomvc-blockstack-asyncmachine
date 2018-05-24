@@ -1,7 +1,10 @@
 import { machine } from "asyncmachine"
 import * as filter_types from "./constants/TodoFilters"
+import * as blockstack from 'blockstack'
 
 const state = {
+  //  UI Actions
+
   AddingTodo: {},
   TodoAdded: { drop: ["AddingTodo"] },
 
@@ -20,7 +23,14 @@ const state = {
   ClearingCompleted: {},
   CompletedCleared: { drop: ["ClearingCompleted"] },
 
-  SetVisibilityFilter: {}
+  SetVisibilityFilter: {},
+
+  // SIGIN IN
+
+  SignInClicked: {},
+  SigningIn: {},
+  SignedIn: { drop: ["SigningIn"] },
+  SignOutClicked: {}
 }
 
 export default class Manager {
@@ -31,6 +41,11 @@ export default class Manager {
       .setTarget(this)
       .id("todos")
       .logLevel(1)
+    if (blockstack.isUserSignedIn()) {
+      this.state.add('SignedIn')
+    } else if (blockstack.isSignInPending()) {
+      this.state.add('SigningIn')
+    }
   }
 
   // ADD
@@ -104,7 +119,29 @@ export default class Manager {
 
   SetVisibilityFilter_state(filter) {
     this.data.visibilityFilter = filter
-    this.state.drop('SetVisibilityFilter')
+    this.state.drop("SetVisibilityFilter")
+  }
+
+  // SIGN IN
+  
+  SigningInInClicked_state() {
+    blockstack.redirectToSignIn()
+  }
+
+  async SigningIn_state() {
+    await blockstack.handlePendingSignIn()
+    window.location = window.location.origin
+  }
+
+  SignedIn_state() {
+    const userData = blockstack.loadUserData()
+    this.data.user = new blockstack.Person(userData.profile)
+    // TODO why?
+    this.data.user.username = userData.username
+  }
+
+  SignOutClicked_state() {
+    blockstack.signUserOut(window.location.origin)
   }
 }
 
@@ -132,6 +169,7 @@ export class Data {
   constructor() {
     this.todos = []
     this.visibilityFilter = filter_types.SHOW_ALL
+    this.user = null
   }
 
   get(id) {
