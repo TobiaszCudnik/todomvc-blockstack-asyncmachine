@@ -371,22 +371,23 @@ export default class Manager {
         })
       )
     }
-    const [encrypted_json, encrypted_data_key] = await Promise.all(tasks)
-
-    if (!this.encoders[username] && !encrypted_data_key) {
+    const [encrypted_db_json, encrypted_data_key_json] = await Promise.all(
+      tasks
+    )
+    if (!this.encoders[username] && !encrypted_data_key_json) {
       console.log(`User "${username}" hasn't exported a key for this user yet`)
       return
     } else if (!this.encoders[username]) {
       // decrypt the data key with our own private key
       const data_key = decryptECIES(
         this.data.user.appPrivateKey,
-        encrypted_data_key
+        JSON.parse(encrypted_data_key_json)
       )
       this.encoders[username] = new Crypto(data_key)
     }
     // decrypt json with the decrypted data key
-    json = this.encoders[username].decrypt(encrypted_json)
-    this.mergeDB(JSON.parse(json))
+    const db_json = this.encoders[username].decrypt(encrypted_db_json)
+    this.mergeDB(JSON.parse(db_json))
   }
 
   async saveDataKey(encryption_key, username, data_key) {
