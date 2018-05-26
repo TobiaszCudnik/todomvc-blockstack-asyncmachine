@@ -1,5 +1,5 @@
 import React, { Fragment } from "react"
-import Header from "../containers/Header"
+import Header from "../components/Header"
 import MainSection from "../components/MainSection"
 import { Consumer } from "../context"
 
