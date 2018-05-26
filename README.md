@@ -16,7 +16,19 @@ Based on the [Redux TodoMVC](https://github.com/reduxjs/redux/tree/master/exampl
 	```bash
 	127.0.0.1     todos.local
 	```
-1. Run `npm start`
+1. `git clone https://github.com/TobiaszCudnik/todomvc-blockstack-asyncmachine.git`
+1. `npm install`
+1. `npm start`
 1. Visit `http://todos.local:8080/`
 
 For sharing you need to register a named Blockstack ID, eg `Alice.id`.
+
+## Video
+
+[![video](https://raw.githubusercontent.com/TobiaszCudnik/todomvc-blockstack-asyncmachine/gh-pages/thumb.png)](https://github.com/TobiaszCudnik/todomvc-blockstack-asyncmachine/blob/gh-pages/todomvc-bs-am.mp4?raw=true)
+
+## Missing
+
+- conflict resolution using [automerge](https://github.com/automerge/automerge)
+- managing subscribers
+- more error handling
