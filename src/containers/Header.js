@@ -10,18 +10,37 @@ export default () => (
         <p
           style={{
             textAlign: "center",
-            padding: "0.5em"
+            padding: "0.5em",
+            marginBottom: 0
           }}
         >
           Logged in as{" "}
-          {app.data.user.profile.name ? app.data.user.profile.name : "anonymous"} ({app
-            .data.user.username
+          {app.data.user.profile.name
+            ? app.data.user.profile.name
+            : "anonymous"}{" "}
+          ({app.data.user.username
             ? app.data.user.username
             : app.data.user.identityAddress}{" "}
           |{" "}
           <a href="#" onClick={app.state.addByListener("SignOutClicked")}>
             sign out
           </a>)
+        </p>
+        <p
+          style={{
+            margin: "0",
+            padding: "0 0.5em"
+          }}
+        >
+          <a
+            href="#"
+            style={{ marginTop: "1em" }}
+            onClick={() =>
+              app.state.add("AddingSubscriber", prompt("Username:"))
+            }
+          >
+            Share
+          </a>
         </p>
         <TodoTextInput
           newTodo

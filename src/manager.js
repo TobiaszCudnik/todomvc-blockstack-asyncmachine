@@ -121,7 +121,11 @@ export default class Manager {
   }
 
   async AddingTodo_state(text) {
-    this.data.todos.unshift({ id: Math.random(), text, completed: false })
+    this.data.todos.unshift({
+      id: Crypto.generateRandom(),
+      text,
+      completed: false
+    })
     this.state.add(["TodoAdded", "WritingDB"])
   }
 
@@ -257,8 +261,9 @@ export default class Manager {
     this.state.add("SubscribersReadingDone")
   }
 
-  AddingSubscriber_enter() {
-    return this.not("WritingSubscribers")
+  AddingSubscriber_enter(username) {
+    if (!username || !username.trim()) return false
+    return this.state.not("WritingSubscribers")
   }
 
   async AddingSubscriber_state(username) {
@@ -349,7 +354,10 @@ export default class Manager {
     }
     const [encrypted_json, encrypted_data_key] = Promise.all(tasks)
 
-    if (!this.encoders[username]) {
+    if (!this.encoders[username] && !encrypted_data_key) {
+      console.log(`User "${username}" hasn't exported a key for this user yet`)
+      return
+    } else if (!this.encoders[username]) {
       // decrypt the data key with our own private key
       const data_key = decryptECIES(
         this.data.user.appPrivateKey,
