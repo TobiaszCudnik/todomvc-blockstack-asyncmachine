@@ -29,6 +29,8 @@ For sharing you need to register a named Blockstack ID, eg `Alice.id`.
 
 ## Missing
 
+- syncing deletions
 - conflict resolution using [automerge](https://github.com/automerge/automerge)
 - managing subscribers
 - more error handling
+- pulling / push notifications
