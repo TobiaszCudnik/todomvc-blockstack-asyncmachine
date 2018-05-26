@@ -13,9 +13,13 @@ const App = () => (
             <MainSection />
           </div>
         ) : app.state.is("NotSignedIn") ? (
-          <button onClick={app.state.addByListener("SignInClicked")}>
+          <a
+            style={{ padding: "1em" }}
+            href="#"
+            onClick={app.state.addByListener("SignInClicked")}
+          >
             Sign In With Blockstack
-          </button>
+          </a>
         ) : null}
       </Fragment>
     )}

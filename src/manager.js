@@ -1,6 +1,7 @@
 import { machine } from "asyncmachine"
 import * as filter_types from "./constants/TodoFilters"
 import * as blockstack from "blockstack"
+// TODO use encryptContent from blockstack ?
 import Crypto from "simple-crypto-js"
 import { encryptECIES, decryptECIES } from "blockstack/lib/encryption"
 
@@ -89,9 +90,9 @@ const state = {
 
 export default class Manager {
   // config
-  data_file = "todos3.json"
+  data_file = "todos8.json"
   subscribers_file = "subscribers.json"
-  log_level = 2
+  log_level = 1
 
   state = machine(state)
   data = new Data()
@@ -99,6 +100,7 @@ export default class Manager {
   data_key = null
 
   constructor() {
+    window.app = this
     this.state
       .setTarget(this)
       .id("todos")
@@ -202,7 +204,11 @@ export default class Manager {
   // SIGN IN
 
   SignInClicked_state() {
-    blockstack.redirectToSignIn()
+    const origin = window.location.origin
+    blockstack.redirectToSignIn(origin, origin + "/manifest.json", [
+      "store_write",
+      "publish_data"
+    ])
   }
 
   async SigningIn_state() {
@@ -228,12 +234,14 @@ export default class Manager {
     const encrypted_db = this.encoders[username].encrypt(
       JSON.stringify(this.data.todos)
     )
-    await blockstack.putFile(this.data_file, encrypted_db)
+    await blockstack.putFile(this.data_file, encrypted_db, { encrypt: false })
     this.state.add("DBWritingDone")
   }
 
   async ReadingDB_state() {
-    let encrypted_json = await blockstack.getFile(this.data_file)
+    let encrypted_json = await blockstack.getFile(this.data_file, {
+      decrypt: false
+    })
     if (!encrypted_json) {
       this.state.add("DBReadingDone")
       this.state.add("WritingDB")
@@ -267,14 +275,19 @@ export default class Manager {
   }
 
   async AddingSubscriber_state(username) {
-    const key_json = await blockstack.getFile("key.json", {
-      username: username
-    })
+    username = username.replace(/\.id$/, "") + ".id"
+    let key_json
+    try {
+      key_json = await blockstack.getFile("key.json", {
+        username,
+        decrypt: false
+      })
+    } catch (e) {
+      console.warn(`Couldn't fetch key.json for user ${username}`)
+      return this.state.drop("AddingSubscriber")
+    }
     const public_key = JSON.parse(key_json)
-    this.data.subscribers.push({
-      username: username,
-      publicKey: public_key
-    })
+    this.data.subscribers.push({ username, public_key })
     await this.saveDataKey(public_key, username, this.data_key)
     this.state.add("WritingSubscribers")
     await this.state.when("SubscribersWritingDone")
@@ -291,14 +304,14 @@ export default class Manager {
   async LoadingKey_state() {
     const username = this.data.user.username
     const encrypted_key = JSON.parse(
-      await blockstack.getFile(`keys/${username}`)
+      await blockstack.getFile(`keys/${username}`, { decrypt: false })
     )
     this.data_key = decryptECIES(this.data.user.appPrivateKey, encrypted_key)
     this.encoders[username] = new Crypto(this.data_key)
     this.state.add("KeyLoaded")
   }
 
-  Exception_state(err, target_states) {
+  Exception_state(err, target_states, ...rest) {
     debugger
     if (target_states.includes("LoadingKey")) {
       // TODO make this handler async once the bug in asyncmachine get fixed
@@ -310,6 +323,8 @@ export default class Manager {
       this.state.add("NotSignedIn")
       this.state.drop("Exception")
     }
+    // call the super handler
+    this.state.Exception_state(err, target_states, ...rest)
   }
 
   // ----- METHODS
@@ -320,7 +335,9 @@ export default class Manager {
       this.data.user.appPrivateKey
     )
     // public key others can use to encrypt their key giving access to the data
-    await blockstack.putFile("key.json", JSON.stringify(publicKey))
+    await blockstack.putFile("key.json", JSON.stringify(publicKey), {
+      encrypt: false
+    })
     await this.saveDataKey(publicKey, this.data.user.username, data_key)
     this.data_key = data_key
   }
@@ -342,17 +359,19 @@ export default class Manager {
   async readExternalDB(username) {
     const tasks = [
       await blockstack.getFile(this.data_file, {
-        username
+        username,
+        decrypt: false
       })
     ]
     if (!this.encoders[username]) {
       tasks.push(
         await blockstack.getFile(`keys/${this.data.user.username}`, {
-          username
+          username,
+          decrypt: false
         })
       )
     }
-    const [encrypted_json, encrypted_data_key] = Promise.all(tasks)
+    const [encrypted_json, encrypted_data_key] = await Promise.all(tasks)
 
     if (!this.encoders[username] && !encrypted_data_key) {
       console.log(`User "${username}" hasn't exported a key for this user yet`)
@@ -374,7 +393,8 @@ export default class Manager {
     const encrypted_data_key = encryptECIES(encryption_key, data_key)
     await blockstack.putFile(
       `keys/${username}`,
-      JSON.stringify(encrypted_data_key)
+      JSON.stringify(encrypted_data_key),
+      { encrypt: false }
     )
   }
 }

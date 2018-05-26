@@ -13,6 +13,7 @@ module.exports = {
     historyApiFallback: {
       disableDotRule: true
     },
+    host: 'todos.local',
     watchOptions: { aggregateTimeout: 300, poll: 1000 },
     headers: {
       "Access-Control-Allow-Origin": "*",
