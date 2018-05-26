@@ -1,7 +1,7 @@
 import { machine } from "asyncmachine"
 import * as filter_types from "./constants/TodoFilters"
 import * as blockstack from "blockstack"
-import SimpleCryptoJS from "simple-crypto-js"
+import Crypto from "simple-crypto-js"
 import { encryptECIES, decryptECIES } from "blockstack/lib/encryption"
 
 const state = {
@@ -30,21 +30,31 @@ const state = {
   // SIGIN IN
 
   SignInClicked: {},
-  SigningIn: {},
+  SigningIn: { drop: ["SignedIn", "NotSignedIn"] },
   SignedIn: {
-    drop: ["SigningIn"],
+    drop: ["SigningIn", "NotSignedIn"],
     add: ["ReadingDB", "ReadingSubscribers"]
   },
+  NotSignedIn: { drop: ["SignedIn", "SigningIn"] },
   SignOutClicked: {},
 
   // SYNCING DB
 
   InitialDBRead: {},
 
-  ReadingDB: { drop: ["WritingDB", "DBReadingDone"] },
-  DBReadingDone: { drop: ["ReadingDB"], add: ["InitialDBRead"] },
+  ReadingDB: {
+    require: ["KeyLoaded"],
+    drop: ["WritingDB", "DBReadingDone"]
+  },
+  DBReadingDone: {
+    drop: ["ReadingDB"],
+    add: ["InitialDBRead"]
+  },
 
-  WritingDB: { drop: ["ReadingDB", "DBWritingDone"] },
+  WritingDB: {
+    require: ["KeyLoaded"],
+    drop: ["ReadingDB", "DBWritingDone"]
+  },
   DBWritingDone: { drop: ["WritingDB"] },
 
   // SYNCING SUBSCRIBERS
@@ -73,18 +83,20 @@ const state = {
 
   Ready: {
     auto: true,
-    require: ["KeyLoaded", "SignedIn"]
+    require: ["KeyLoaded", "SignedIn", "InitialDBRead"]
   }
 }
 
 export default class Manager {
   // config
-  todos_file = "todos.json"
+  data_file = "todos3.json"
   subscribers_file = "subscribers.json"
   log_level = 2
 
   state = machine(state)
   data = new Data()
+  encoders = {}
+  data_key = null
 
   constructor() {
     this.state
@@ -95,6 +107,8 @@ export default class Manager {
       this.state.add("SignedIn")
     } else if (blockstack.isSignInPending()) {
       this.state.add("SigningIn")
+    } else {
+      this.state.add("NotSignedIn")
     }
   }
 
@@ -206,48 +220,41 @@ export default class Manager {
   // TODOS DB
 
   async WritingDB_state() {
-    const encrypt = true
-    await blockstack.putFile(
-      this.todos_file,
-      JSON.stringify(this.data.todos),
-      encrypt
+    const username = this.data.user.username
+    const encrypted_db = this.encoders[username].encrypt(
+      JSON.stringify(this.data.todos)
     )
+    await blockstack.putFile(this.data_file, encrypted_db)
     this.state.add("DBWritingDone")
   }
 
   async ReadingDB_state() {
-    const decrypt = true
-    const todos_json = await blockstack.getFile(this.todos_file, decrypt)
-    const todos = JSON.parse(todos_json || "[]")
-
-    this.data.todos = todos
-    this.state.add("DBReadingDone")
+    let encrypted_json = await blockstack.getFile(this.data_file)
+    if (!encrypted_json) {
+      this.state.add("DBReadingDone")
+      this.state.add("WritingDB")
+    } else {
+      const username = this.data.user.username
+      const decrypted_json = this.encoders[username].decrypt(encrypted_json)
+      this.data.todos = JSON.parse(decrypted_json)
+      this.state.add("DBReadingDone")
+    }
   }
 
   // EXTERNAL TODOS
 
   async ReadingSubscribers_state() {
     const json = await blockstack.getFile(this.subscribers_file)
-    // initially there's no subscribers
     if (json) {
+      // initially there's no subscribers
       this.data.subscribers = JSON.parse(json)
-      await this.readSubscribersTodos()
+      for (const subscriber of this.data.subscribers) {
+        // TODO in parallel
+        await this.readExternalDB(subscriber.username)
+      }
+      await this.saveFile()
     }
     this.state.add("SubscribersReadingDone")
-  }
-
-  async readSubscribersTodos() {
-    for (const subscriber of this.data.subscribers) {
-      await this.readExternalTodos(subscriber.username)
-    }
-  }
-
-  async readExternalTodos(username) {
-    const json = await blockstack.getFile(this.sub_file, {
-      username
-    })
-    const todos = JSON.parse(json)
-    // TODO merge todos with this.data.todos
   }
 
   AddingSubscriber_enter() {
@@ -258,13 +265,16 @@ export default class Manager {
     const key_json = await blockstack.getFile("key.json", {
       username: username
     })
+    const public_key = JSON.parse(key_json)
     this.data.subscribers.push({
       username: username,
-      publicKey: JSON.parse(key_json)
+      publicKey: public_key
     })
+    await this.saveDataKey(public_key, username, this.data_key)
     this.state.add("WritingSubscribers")
     await this.state.when("SubscribersWritingDone")
-    this.readExternalTodos(username)
+    await this.readExternalDB(username)
+    this.state.add("SubscriberAdded")
   }
 
   async WritingSubscribers_state() {
@@ -273,34 +283,96 @@ export default class Manager {
     this.state.add("SubscribersWritingDone")
   }
 
+  async LoadingKey_state() {
+    const username = this.data.user.username
+    const encrypted_key = JSON.parse(
+      await blockstack.getFile(`keys/${username}`)
+    )
+    this.data_key = decryptECIES(this.data.user.appPrivateKey, encrypted_key)
+    this.encoders[username] = new Crypto(this.data_key)
+    this.state.add("KeyLoaded")
+  }
+
+  Exception_state(err, target_states) {
+    debugger
+    if (target_states.includes("LoadingKey")) {
+      // TODO make this handler async once the bug in asyncmachine get fixed
+      this.setupKey().then(() => {
+        this.state.drop(["Exception", "LoadingKey"])
+        this.state.add("LoadingKey")
+      })
+    } else if (target_states.includes("SigningIn")) {
+      this.state.add("NotSignedIn")
+      this.state.drop("Exception")
+    }
+  }
+
+  // ----- METHODS
+
   async setupKey() {
-    const aesKey = SimpleCryptoJS.generateRandom()
+    const data_key = Crypto.generateRandom()
     const publicKey = blockstack.getPublicKeyFromPrivate(
       this.data.user.appPrivateKey
     )
+    // public key others can use to encrypt their key giving access to the data
     await blockstack.putFile("key.json", JSON.stringify(publicKey))
-
-    const encryptedAesKey = encryptECIES(publicKey, aesKey)
-    await blockstack.putFile(
-      `keys/${this.data.user.username}`,
-      JSON.stringify(encryptedAesKey)
-    )
-
-    this.data.aesKey = aesKey
+    await this.saveDataKey(publicKey, this.data.user.username, data_key)
+    this.data_key = data_key
   }
 
-  async LoadingKey_state() {
-    const key_json = await blockstack.getFile(`keys/${this.data.user.username}`)
-    let encryptedKey = JSON.parse(key_json)
-    let decryptedKey = decryptECIES(this.data.user.appPrivateKey, encryptedKey)
-    this.data.aesKey = decryptedKey
-    this.state.add("KeyLoaded")
+  mergeDB(todos) {
+    // TODO merge using automerge
+    for (const todo of todos) {
+      if (this.data.get(todo.id)) continue
+      this.data.todos.push(todo)
+    }
+  }
+
+  async saveFile() {
+    this.state.add("WritingDB")
+    await this.state.when("DBWritingDone")
+  }
+
+  // TODO error handling
+  async readExternalDB(username) {
+    const tasks = [
+      await blockstack.getFile(this.data_file, {
+        username
+      })
+    ]
+    if (!this.encoders[username]) {
+      tasks.push(
+        await blockstack.getFile(`keys/${this.data.user.username}`, {
+          username
+        })
+      )
+    }
+    const [encrypted_json, encrypted_data_key] = Promise.all(tasks)
+
+    if (!this.encoders[username]) {
+      // decrypt the data key with our own private key
+      const data_key = decryptECIES(
+        this.data.user.appPrivateKey,
+        encrypted_data_key
+      )
+      this.encoders[username] = new Crypto(data_key)
+    }
+    // decrypt json with the decrypted data key
+    json = this.encoders[username].decrypt(encrypted_json)
+    this.mergeDB(JSON.parse(json))
+  }
+
+  async saveDataKey(encryption_key, username, data_key) {
+    const encrypted_data_key = encryptECIES(encryption_key, data_key)
+    await blockstack.putFile(
+      `keys/${username}`,
+      JSON.stringify(encrypted_data_key)
+    )
   }
 }
 
 export class Data {
   todos = []
-  aesKey = null
   visibilityFilter = filter_types.SHOW_ALL
   user = null
   subscribers = []

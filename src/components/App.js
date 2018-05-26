@@ -12,7 +12,7 @@ const App = () => (
             <Header />
             <MainSection />
           </div>
-        ) : app.state.not("SigningIn") ? (
+        ) : app.state.is("NotSignedIn") ? (
           <button onClick={app.state.addByListener("SignInClicked")}>
             Sign In With Blockstack
           </button>
