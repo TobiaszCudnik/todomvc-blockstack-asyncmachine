@@ -34,13 +34,20 @@ export default () => (
         >
           <a
             href="#"
-            style={{ marginTop: "1em" }}
             onClick={() =>
               app.state.add("AddingSubscriber", prompt("Username:"))
             }
           >
             Share
-          </a>
+          </a>{" "}
+          |{" "}
+          {app.is("SyncingExternalDBs") ? (
+            <span>...syncing...</span>
+          ) : (
+            <a href="#" onClick={app.state.addByListener("ReadingSubscribers")}>
+              Pull changes
+            </a>
+          )}
         </p>
         <TodoTextInput
           newTodo

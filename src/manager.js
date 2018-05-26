@@ -58,7 +58,7 @@ const state = {
   },
   DBWritingDone: { drop: ["WritingDB"] },
 
-  // SYNCING SUBSCRIBERS
+  // SUBSCRIBERS
 
   ReadingSubscribers: {
     drop: ["WritingSubscribers", "SubscribersReadingDone"]
@@ -70,10 +70,10 @@ const state = {
   },
   SubscribersWritingDone: { drop: ["WritingSubscribers"] },
 
-  // ADDING A SUBSCRIBER
-
   AddingSubscriber: {},
   SubscriberAdded: { drop: ["AddingSubscriber"] },
+
+  SyncingExternalDBs: {},
 
   // KEY
 
@@ -90,7 +90,7 @@ const state = {
 
 export default class Manager {
   // config
-  data_file = "todos8.json"
+  data_file = "todos9.json"
   subscribers_file = "subscribers.json"
   log_level = 1
 
@@ -255,16 +255,32 @@ export default class Manager {
 
   // EXTERNAL TODOS
 
+  // TODO these should be 2 separate states
   async ReadingSubscribers_state() {
-    const json = await blockstack.getFile(this.subscribers_file)
-    if (json) {
+    // initial sync
+    if (!this.data.subscribers) {
+      this.data.subscribers = []
+      const json = await blockstack.getFile(this.subscribers_file)
       // initially there's no subscribers
-      this.data.subscribers = JSON.parse(json)
-      for (const subscriber of this.data.subscribers) {
-        // TODO in parallel
-        await this.readExternalDB(subscriber.username)
+      if (json) {
+        this.data.subscribers = JSON.parse(json)
+        this.state.add("SyncingExternalDBs")
+        // read in parallel
+        await Promise.all(
+          this.data.subscribers.map(sub => this.readExternalDB(sub.username))
+        )
+        this.state.drop("SyncingExternalDBs")
+        await this.saveFile()
       }
-      await this.saveFile()
+      // 2nd and later syncs
+    } else {
+      this.state.add("SyncingExternalDBs")
+      // read in parallel
+      await Promise.all(
+        this.data.subscribers.map(sub => this.readExternalDB(sub.username))
+      )
+      this.state.drop("SyncingExternalDBs")
+      this.state.add("SubscribersReadingDone")
     }
     this.state.add("SubscribersReadingDone")
   }
@@ -290,8 +306,12 @@ export default class Manager {
     this.data.subscribers.push({ username, public_key })
     await this.saveDataKey(public_key, username, this.data_key)
     this.state.add("WritingSubscribers")
-    await this.state.when("SubscribersWritingDone")
-    await this.readExternalDB(username)
+    this.state.add("SyncingExternalDBs")
+    await Promise.all([
+      this.state.when("SubscribersWritingDone"),
+      this.readExternalDB(username)
+    ])
+    this.state.drop("SyncingExternalDBs")
     this.state.add("SubscriberAdded")
   }
 
@@ -312,7 +332,6 @@ export default class Manager {
   }
 
   Exception_state(err, target_states, ...rest) {
-    debugger
     if (target_states.includes("LoadingKey")) {
       // TODO make this handler async once the bug in asyncmachine get fixed
       this.setupKey().then(() => {
@@ -328,6 +347,10 @@ export default class Manager {
   }
 
   // ----- METHODS
+
+  is(states) {
+    return this.state.is(states)
+  }
 
   async setupKey() {
     const data_key = Crypto.generateRandom()
@@ -345,8 +368,13 @@ export default class Manager {
   mergeDB(todos) {
     // TODO merge using automerge
     for (const todo of todos) {
-      if (this.data.get(todo.id)) continue
-      this.data.todos.push(todo)
+      const existing = this.data.get(todo.id)
+      if (existing) {
+        existing.text = todo.text
+        existing.completed = todo.completed
+      } else {
+        this.data.todos.unshift(todo)
+      }
     }
   }
 
@@ -355,7 +383,6 @@ export default class Manager {
     await this.state.when("DBWritingDone")
   }
 
-  // TODO error handling
   async readExternalDB(username) {
     const tasks = [
       await blockstack.getFile(this.data_file, {
@@ -384,10 +411,12 @@ export default class Manager {
         JSON.parse(encrypted_data_key_json)
       )
       this.encoders[username] = new Crypto(data_key)
+      // only if user has a DB file
+    } else if (encrypted_db_json) {
+      // decrypt json with the decrypted data key
+      const db_json = this.encoders[username].decrypt(encrypted_db_json)
+      this.mergeDB(JSON.parse(db_json))
     }
-    // decrypt json with the decrypted data key
-    const db_json = this.encoders[username].decrypt(encrypted_db_json)
-    this.mergeDB(JSON.parse(db_json))
   }
 
   async saveDataKey(encryption_key, username, data_key) {
@@ -404,7 +433,7 @@ export class Data {
   todos = []
   visibilityFilter = filter_types.SHOW_ALL
   user = null
-  subscribers = []
+  subscribers = null
 
   get activeCount() {
     return this.filtered_todos.length - this.completedCount
