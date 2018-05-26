@@ -12,6 +12,7 @@ Based on the [Redux TodoMVC](https://github.com/reduxjs/redux/tree/master/exampl
 
 ## Usage
 
+1. Install the [blockstack browser](https://github.com/blockstack/blockstack-browser/releases)
 1. Add `todos.local` to your `/etc/hosts` file
 	```bash
 	127.0.0.1     todos.local
